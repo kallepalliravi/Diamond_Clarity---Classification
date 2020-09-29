@@ -1,18 +1,18 @@
 # Diamond_Clarity---Classification
 
-Date created
+<b>Date created</b>
 12/18/2017
 
-Project Title
+<b>Project Title</b>
 Classifying Diamond Clarity
 
-Description
+<b>Description</b>
 Using R Classify diamond clarity based on multiple features.
 
-Files used
+<b>Files used</b>
 diamonds.csv
 
-Project Overview
+<b>Project Overview</b>
 Natural diamonds are result of carbon exposed to tremendous heat and pressure deep in the earth. This process can result in variety of internal characteristics called “inclusions” and external characteristics called “blemishes”. Evaluating the diamond clarity involves determining the number, size, relief, nature and position of these characteristics, as well as how these effect the appearance of this stone. While no diamond is perfectly pure, the closer it comes, higher the value.
 Many inclusions and blemishes are too tiny to be seen by anyone other than a trained grader. To naked eye VS1 and SI2 may exactly look the same, but they quite different in terms of quality. Expensive equipment and trained professionals are required to grade the clarity of the diamond. Due to this the buyer is dependent on the certificate given by the trader and no other means of verifying the diamond clarity. This leads to buyer getting duped or accidently got sold the wrong clarity diamond. This model tries to classify the clarity of the diamond based on other features of the diamond, so the buyer can get a sense of confidence that he is being sold the correct diamond. This model classifies the groups of clarity of the diamond and but does not include several level within each group.
 
