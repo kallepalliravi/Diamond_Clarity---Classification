@@ -1,0 +1,242 @@
+---
+title: "SVM-Final Project"
+output: html_notebook
+---
+######################################################Data Preparation START ##################################################
+ 
+## read data, clean and analyse the data
+```{r}
+
+diamonds = read.csv("diamonds.csv")
+head(diamonds)
+
+# first col is just row number so delete that col
+
+diamonds = diamonds[,-1]
+dim(diamonds)
+
+## check the structure of data
+str(diamonds)
+
+## check for any NA's in data
+anyNA(diamonds)
+
+## check the summary of data
+summary(diamonds)
+
+```
+
+##Since the goal is to classify what clarity and not the levels within each clarity we will make a new column to reduce the clarity types. so will consider C=VVS1&2 as VVS, VS1&2 as VS, SI1&2 as SI, L1 and IF. Each of the categories is measurement of how clear the diamond is (I1 (worst), SI2, SI1, VS2, VS1, VVS2, VVS1, IF (best))
+
+```{r}
+
+diamonds$clarity.bin = rep(NA, length(diamonds$clarity))
+diamonds$clarity.bin[which(diamonds$clarity=="VS1" | diamonds$clarity=="VS2" )] = "VS"
+diamonds$clarity.bin[which(diamonds$clarity=="VVS1" | diamonds$clarity=="VVS2" )] = "VVS"
+diamonds$clarity.bin[which(diamonds$clarity=="SI1" | diamonds$clarity=="SI2" )] = "SI"
+diamonds$clarity.bin[which(diamonds$clarity=="IF" | diamonds$clarity=="IF2" )] = "IF"
+diamonds$clarity.bin[which(diamonds$clarity=="I1" | diamonds$clarity=="I1" )] = "I1"
+
+anyNA(diamonds)
+```
+
+## since the attributes/variables are different mesaures and are on different scale and svm partioning is based distance, we will standadize all the variables
+
+```{r}
+
+diamonds$carat.bin = scale(diamonds$carat,center = TRUE, scale = TRUE)
+diamonds$depth.bin = scale(diamonds$depth,center = TRUE, scale = TRUE)
+diamonds$table.bin = scale(diamonds$table,center = TRUE, scale = TRUE)
+diamonds$price.bin = scale(diamonds$price,center = TRUE, scale = TRUE)
+diamonds$x.bin = scale(diamonds$x,center = TRUE, scale = TRUE)
+diamonds$y.bin = scale(diamonds$y,center = TRUE, scale = TRUE)
+diamonds$z.bin = scale(diamonds$z,center = TRUE, scale = TRUE)
+
+head(diamonds)
+
+```
+
+
+
+
+
+
+
+##create a new DF using the new scaled values for model training
+
+```{r}
+attach(diamonds)
+diamonds.df = data.frame(clarity.bin, cut,color,carat.bin,depth.bin,table.bin,price.bin,x.bin,y.bin,z.bin)
+head(diamonds.df)
+```
+## check for number of sample for each category, l1 and IF sample sizes are smaller than other clarities but they still have about 1000 samples
+
+```{r}
+plot(diamonds.df$clarity.bin)
+```
+
+######################################################Data Preparation END ##################################################
+
+######################################################Data Partion START ##################################################
+## Since the size of the data is pretty huge and SVM is really slow we can break the data into training and validation sets for ## model assessment rather than doing crossvalidation for model assesment.For model selection we will still use cv
+
+## lets use 2/3(~66%) for training data and 1/3 (~34%) for validating the model
+
+```{r}
+
+set.seed(123)
+n=dim(diamonds.df)[1]
+s = sample(n, 0.66*n)
+train.data = diamonds.df[s,]
+valid.data = diamonds.df[-s,]
+
+dim(train.data)
+dim(valid.data)
+
+head(train.data)
+```
+
+######################################################Data Partion END ##################################################
+
+######################################################SVM START #########################################################
+
+## First we will try SVM with linear kernel with default cost value
+## 1. Linear kernal Base model
+
+```{r}
+library(e1071)
+
+svm.linear = svm(clarity.bin ~., data=train.data, kernel="linear", type="C-classification")
+summary(svm.linear)
+```
+
+## lets predict with the base model and see how it does on the train.data. We can compare this with the tuned model
+
+```{r}
+pred.svm = predict(svm.linear, valid.data)
+svm.linear.tab = table(Actual=valid.data$clarity.bin, Pred = pred.svm)
+svm.linear.tab
+
+svm.linear.error = sum(diag(svm.linear.tab))/sum(svm.linear.tab)
+svm.linear.error
+```
+
+## cross validation to tune the cost function
+
+```{r}
+
+set.seed(123)
+
+tune.out = tune(svm, clarity.bin ~ ., data = train.data, kernel = "linear", type = "C-classification", 
+                ranges = list(cost=c(.001, .01, .1, 1, 5, 10, 100)))
+
+
+summary(tune.out)
+
+
+
+```
+
+
+
+```{r}
+svm.linear.tune = svm(clarity.bin ~., data=train.data, cost= 10, kernel="linear", type="C-classification")
+summary(svm.linear.tune)
+```
+
+## Predction using tuned linear kernel model
+
+```{r}
+
+pred.svm.tune = predict(svm.linear.tune, valid.data)
+svm.tune.tab = table(Actual=valid.data$clarity.bin, Pred = pred.svm.tune)
+svm.tune.tab
+
+svm.tune.error = sum(diag(svm.tune.tab))/sum(svm.tune.tab)
+svm.tune.error
+```
+
+## lets try with radial kernel
+
+```{r}
+
+svm.radial = svm(clarity.bin ~., data=train.data, kernel="radial", type="C-classification")
+summary(svm.radial)
+```
+
+lets predict based on base radil kernel model
+
+```{r}
+pred.radial = predict(svm.radial, valid.data)
+svm.radial.tab = table(Actual=valid.data$clarity.bin, Pred = pred.radial)
+svm.radial.tab
+
+svm.radial.error = sum(diag(svm.radial.tab))/sum(svm.radial.tab)
+svm.radial.error
+```
+
+## Radial model peforms bettwer than the linear model, lets try to tune the radial model using cv.
+
+```{r}
+
+set.seed(123)
+
+tune.radial = tune(svm, clarity.bin ~ ., data = train.data, kernel = "radial", type = "C-classification", 
+                   ranges = list(cost=c(.001, .01, .1, 1, 5, 10, 100), gamma=c(0.1,0.5,1,2,3,4)))
+
+summary(tune.radial)
+plot(tune.radial)
+
+?tune
+tune.control$cross
+```
+
+##SVM with radial kernel with cost value of 100 and gamma value of 0.1 produced the best results of all so we will use these as our paramters.
+
+```{r}
+
+final.model = svm(clarity.bin ~., data=train.data, cost= 100,gamma=0.1, kernel="radial", type="C-classification")
+summary(final.model)
+```
+
+
+```{r}
+
+pred.radial.tune = predict(svm.radial.tune, valid.data)
+svm.radial.tab.tune = table(Actual=valid.data$clarity.bin, Pred = pred.radial.tune)
+svm.radial.tab.tune
+
+svm.radial.error.tune = sum(diag(svm.radial.tab.tune))/sum(svm.radial.tab.tune)
+svm.radial.error.tune
+
+```
+
+
+###################################################### SVM END #############################################################
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

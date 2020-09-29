@@ -1,0 +1,208 @@
+---
+title: "RandomForest - FinalProject"
+author: "RaviKallepalli"
+date: "December 12, 2017"
+output: pdf_document
+---
+
+######################################################Data Preparation START ##################################################
+
+## load the data and analyze the data
+
+```{r}
+
+diamonds.rf = read.csv("diamonds.csv")
+head(diamonds.rf)
+
+# first col is just row number so delete that col
+
+diamonds.rf = diamonds.rf[,-1]
+dim(diamonds.rf)
+
+## check the structure of data
+str(diamonds.rf)
+
+## check for any NA's in data
+anyNA(diamonds.rf)
+
+## check the summary of data
+summary(diamonds.rf)
+
+
+
+```
+
+##Check for corelation between the predictors. Random forests are useful if the corelation between the predictor varaibles is really high.
+
+```{r}
+library(psych)
+
+corr.test(diamonds.rf[-c(2:4)])
+```
+
+## There is high corelation between the predictor variables x,y,z, carat and price, so random forest might be a good option for decision trees.
+
+##Since the goal is to classify what clarity and not the levels within each clarity we will make a new column to reduce the clarity types. so will consider C=VVS1&2 as VVS, VS1&2 as VS, SI1&2 as SI, L1 and IF. Each of the categories is measurement of how clear the diamond is (I1 (worst), SI2, SI1, VS2, VS1, VVS2, VVS1, IF (best))
+
+```{r}
+diamonds.rf$clarity.bin = rep(NA, length(diamonds.rf$clarity))
+diamonds.rf$clarity.bin[which(diamonds.rf$clarity=="VS1" | diamonds.rf$clarity=="VS2" )] = "VS"
+diamonds.rf$clarity.bin[which(diamonds.rf$clarity=="VVS1" | diamonds.rf$clarity=="VVS2" )] = "VVS"
+diamonds.rf$clarity.bin[which(diamonds.rf$clarity=="SI1" | diamonds.rf$clarity=="SI2" )] = "SI"
+diamonds.rf$clarity.bin[which(diamonds.rf$clarity=="IF" | diamonds.rf$clarity=="IF2" )] = "IF"
+diamonds.rf$clarity.bin[which(diamonds.rf$clarity=="I1" | diamonds.rf$clarity=="I1" )] = "I1"
+
+anyNA(diamonds.rf)
+```
+
+## since random forests are based on tree partionig algorithms and not based on distance, scaling is not required for random forest.
+
+##create a new DF used for model training
+
+```{r}
+attach(diamonds.rf)
+diamonds.rf.df = data.frame(clarity.bin, cut,color,carat,depth,table,price,x,y,z)
+head(diamonds.rf.df)
+```
+
+######################################################Data Preparation END ##################################################
+
+###################################################### Data Partion START ###################################################
+## data partion for testing and validation. lets use 2/3(~66%) for training data and 1/3 (~34%) for validating the model
+
+```{r}
+set.seed(123)
+n=dim(diamonds.rf.df)[1]
+s.rf = sample(n, 0.66*n)
+train.rf = diamonds.rf.df[s.rf,]
+valid.rf = diamonds.rf.df[-s.rf,]
+
+dim(train.rf)
+dim(valid.rf)
+
+head(train.rf)
+```
+
+##samples sizes of each class
+
+```{r}
+plot(diamonds.rf.df$clarity.bin)
+```
+
+###################################################### Data Partion END ####################################################
+
+###################################################### Random Forest Start ##################################################
+
+##Random Forest for classification of clarity of the diamoind, with default paramter values and then tune the paramters.
+
+```{r}
+library(randomForest)
+
+set.seed(123)
+
+rf.model = randomForest(clarity.bin ~.,data=train.rf)
+rf.model
+```
+
+## predict data on the test data using the base model
+
+```{r}
+
+library(caret)
+
+rf.model.pred = predict(rf.model, valid.rf)
+confusionMatrix(rf.model.pred,valid.rf$clarity.bin )
+```
+## Based on this intial model the accuracy rate is ~83%, based on this model sensitivity is higer for class SI, VS and VVS.
+
+## check for error rate based on number of tress
+
+```{r}
+plot(rf.model)
+legend("topright", colnames(rf.model$err.rate),col=1:5, lty=1:3)
+```
+## looks like error rate is pretty constant after 100 tress for all the classes.
+
+## lets use 10-fold CV to find the optimal mtry value
+
+```{r}
+library(caret)
+
+ctrl = trainControl(method="CV", number=10, savePredictions = TRUE)
+mtry.cv = expand.grid(mtry = c(2,3,4,5,6,7,8,9))
+rf.model.cv = train(clarity.bin ~. , data= train.rf,
+                    method = "rf",
+                    trControl = ctrl,
+                    tuneGrid = mtry.cv
+                    
+                    )
+
+rf.model.cv
+plot(rf.model.cv, xlab="mtry")
+
+```
+
+## Current model uses mtry of 3 and ntrees=500 which are default values.
+## lets also check with tune rf to find optimal value of mtry
+
+```{r}
+diamonds.rf.tune = tuneRF(train.rf[,-1], train.rf[,1],
+                          ntreeTry = 100,
+                          stepFactor = 0.5,
+                          mtryStart = 3,
+                          improve = 0.05,
+                          trace = TRUE,
+                          plot = TRUE)
+
+?tuneRF
+```
+
+Here mtry of 6 is providing the best OOB errorin both the cases.After an mtry value of 6, the error rare flattens out. From plotting the model we found that after 100 trees the oob error rate has become close to constant, so we will use a ntress of 100 and mtry of 6 to build a tuned model.
+
+## now lets build a model with the tuned paramters which provided the least oob error
+
+```{r}
+
+set.seed(123)
+
+rf.tune = randomForest(clarity.bin ~.,data=train.rf, 
+                       ntree = 100, 
+                       mtry=6,
+                       importance = TRUE)
+                      
+                       
+rf.tune
+
+?randomForest
+```
+## oob error redced from 17.02% to 16.5%
+##lets test the tune model on the validation data
+
+```{r}
+
+rf.tune.pred = predict(rf.tune, valid.rf)
+confusionMatrix(rf.tune.pred,valid.rf$clarity.bin )
+
+```
+ ## Accuracy improved from 83.02% to 84.12%
+ 
+ ## which variables are the playing the most important role
+ 
+```{r}
+varImpPlot(rf.tune)
+```
+ 
+## color and price has the higest contribution in terms of accuracy and price has the higest contribution to node purity.
+
+###################################################### Random Forest END ##################################################
+
+
+
+
+
+
+
+
+
+
+

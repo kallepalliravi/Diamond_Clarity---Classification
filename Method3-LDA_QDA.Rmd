@@ -1,0 +1,192 @@
+---
+title: "LDA-QDA Final Project"
+author: "RaviKallepalli"
+date: "December 14, 2017"
+output: pdf_document
+---
+
+################################################# Data Preparation START ###############################################
+
+## load and analyze the data
+
+```{r cars}
+
+diamonds.da = read.csv("diamonds.csv")
+
+diamonds.da = diamonds.da[,-1]
+dim(diamonds.da)
+
+## check the structure of data
+str(diamonds.da)
+
+## check for any NA's in data
+anyNA(diamonds.da)
+
+## check the summary of data
+summary(diamonds.da)
+
+
+```
+
+##Since the goal is to classify what clarity and not the levels within each clarity we will make a new column to reduce the clarity types. so will consider C=VVS1&2 as VVS, VS1&2 as VS, SI1&2 as SI, L1 and IF. Each of the categories is measurement of how clear the diamond is (I1 (worst), SI2, SI1, VS2, VS1, VVS2, VVS1, IF (best))
+
+```{r}
+diamonds.da$clarity.bin = rep(NA, length(diamonds.da$clarity))
+diamonds.da$clarity.bin[which(diamonds.da$clarity=="VS1" | diamonds.da$clarity=="VS2" )] = "VS"
+diamonds.da$clarity.bin[which(diamonds.da$clarity=="VVS1" | diamonds.da$clarity=="VVS2" )] = "VVS"
+diamonds.da$clarity.bin[which(diamonds.da$clarity=="SI1" | diamonds.da$clarity=="SI2" )] = "SI"
+diamonds.da$clarity.bin[which(diamonds.da$clarity=="IF" | diamonds.da$clarity=="IF2" )] = "IF"
+diamonds.da$clarity.bin[which(diamonds.da$clarity=="I1" | diamonds.da$clarity=="I1" )] = "I1"
+
+anyNA(diamonds.da)
+```
+
+## check if all the variables are approx normal
+
+```{r}
+
+hist(diamonds.da$carat) ## not normal and right skewed, requires transformation
+hist(diamonds.da$depth) 
+hist(diamonds.da$table) 
+hist(diamonds.da$price) ## not normal and right skewed, requires transformation
+hist(diamonds.da$x) 
+hist(diamonds.da$y)  
+hist(diamonds.da$z) 
+```
+
+log transform the variables which are not normal
+
+```{r}
+diamonds.da$carat.log = log(diamonds.da$carat)
+hist(diamonds.da$carat.log) ## aprox normal
+
+diamonds.da$price.log = log(diamonds.da$price)
+hist(diamonds.da$price.log) ## approx normal
+
+
+
+``` 
+
+## Create a new data frame with the new columns
+
+```{r}
+attach(diamonds.da)
+diamonds.da.df = data.frame(clarity.bin, cut,color, carat.log, depth, table, price.log, x, y, z)
+head(diamonds.da.df)
+
+
+```
+################################################# Data Preparation END ###############################################
+
+################################################# Data Partion START ###############################################
+
+```{r}
+set.seed(123)
+n=dim(diamonds.da.df)[1]
+s.da = sample(n, 0.66*n)
+train.da = diamonds.da.df[s.rf,]
+valid.da = diamonds.da.df[-s.rf,]
+
+dim(train.da)
+dim(valid.da)
+
+head(train.da)
+```
+################################################# Data Partion END ###############################################
+
+################################################# LDA and QDA START ###############################################
+
+## will build list of all models so we can choose the best one through cv
+## Based on RF variable importance order of the varaibles are price, color, depth, carat, y, cut, table, z and x
+
+```{r}
+nmodels=9
+model1 = (clarity.bin ~ price.log)
+model2 = (clarity.bin ~ price.log+color)
+model3 = (clarity.bin ~ price.log+color+depth)
+model4 = (clarity.bin ~ price.log+color+depth+carat.log)
+model5 = (clarity.bin ~ price.log+color+depth+carat.log+y)
+model6 = (clarity.bin ~ price.log+color+depth+carat.log+y+cut)
+model7 = (clarity.bin ~ price.log+color+depth+carat.log+y+cut+table)
+model8 = (clarity.bin ~ price.log+color+depth+carat.log+y+cut+table+z)
+model9 = (clarity.bin ~ price.log+color+depth+carat.log+y+cut+table+z+x)
+
+allmodels = list(model1,model2,model3,model4,model5,model6,model7,model8,model9)
+
+
+
+```
+
+## 10 fold cv for model selection
+
+```{r}
+n = dim(train.da)[1]
+k =10
+groups = c(rep(1:k,floor(n/k)))
+
+set.seed(123)
+cvgroups = sample(groups,n)
+allpredictedCV.lda = matrix(rep(NA,n*nmodels),ncol=nmodels)
+allpredictedCV.qda = matrix(rep(NA,n*nmodels),ncol=nmodels)
+
+for(i in 1:k){ 
+      groupi = (cvgroups == i)
+      
+      for (m in 1:nmodels)  {
+      ldafit = lda(formula = allmodels[[m]],data=train.da, subset= !groupi )
+      newdata.lda = data.frame(train.da[groupi,])
+      allpredictedCV.lda[groupi,m] = as.character(predict(ldafit,newdata.lda)$class)
+      
+      }
+      
+      for (n in 1:nmodels)  {
+      qdafit = qda(formula = allmodels[[m]],data=train.da, subset= !groupi )
+      newdata.qda = data.frame(train.da[groupi,])
+      allpredictedCV.qda[groupi,n] = as.character(predict(qdafit,newdata.qda)$class)
+      
+      
+      }
+      
+}
+
+allmodelCV.lda = rep(NA,nmodels)
+for (m in 1:nmodels) { allmodelCV.lda[m] = sum(allpredictedCV.lda[,m]!=train.da$clarity.bin)/n}
+plot(1:nmodels,allmodelCV.lda,col="red",pch=20)
+
+allmodelCV.qda = rep(NA,nmodels)
+for (n in 1:nmodels) { allmodelCV.qda[n] = sum(allpredictedCV.qda[,m]!=train.da$clarity.bin)/n}
+plot(1:nmodels,allmodelCV.qda,col="red",pch=20)
+
+```
+
+## for lda any model after 4th one has approx the same error. So we will choose the most parcimonious model which is 4.
+## for qda model no 9 has the best error rate
+
+```{r}
+
+
+lda.tune = lda(clarity.bin ~ price.log+color+depth+carat.log, data=train.da)
+lda.tune
+```
+
+```{r}
+
+lda.fit = predict(lda.tune,valid.da)$class
+lda.tab = table(valid.da$clarity.bin, lda.fit)
+lda.tab
+sum(diag(lda.tab))/sum(lda.tab)
+```
+
+```{r}
+qda.tune = lda(clarity.bin ~ ., data=train.da)
+qda.tune
+```
+
+```{r}
+qda.fit = predict(qda.tune,valid.da)$class
+qda.tab = table(valid.da$clarity.bin, qda.fit)
+qda.tab
+sum(diag(qda.tab))/sum(qda.tab)
+
+```
+
